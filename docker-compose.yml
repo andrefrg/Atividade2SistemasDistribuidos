@@ -1,0 +1,331 @@
+version: '3.8'
+
+services:
+  redis-master:
+    image: redis:alpine
+    networks:
+      - app-network
+    volumes:
+      - redis-master-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 3
+    ports:
+      - "6380:6379"
+
+  redis-replica:
+    image: redis:alpine
+    networks:
+      - app-network
+    volumes:
+      - redis-replica-data:/data
+    command: redis-server --appendonly yes --replicaof redis-master 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 3
+    depends_on:
+      - redis-master
+    ports:
+      - "6381:6379"
+
+  envoy:
+    image: envoyproxy/envoy:v1.26-latest
+    networks:
+      - app-network
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      - "6378:6379"
+    depends_on:
+      - redis-master
+      - redis-replica
+
+  # Cluster CockroachDB com 3 nós
+  crdb1:
+    image: cockroachdb/cockroach
+    command: start --insecure --join=crdb1,crdb2,crdb3
+    hostname: crdb1
+    networks:
+      - app-network
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+    volumes:
+      - crdb1-data:/cockroach/cockroach-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 3
+
+  crdb2:
+    image: cockroachdb/cockroach
+    command: start --insecure --join=crdb1,crdb2,crdb3
+    hostname: crdb2
+    networks:
+      - app-network
+    ports:
+      - "26258:26257"
+      - "8081:8080"
+    volumes:
+      - crdb2-data:/cockroach/cockroach-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 3
+
+  crdb3:
+    image: cockroachdb/cockroach
+    command: start --insecure --join=crdb1,crdb2,crdb3
+    hostname: crdb3
+    networks:
+      - app-network
+    ports:
+      - "26259:26257"
+      - "8082:8080"
+    volumes:
+      - crdb3-data:/cockroach/cockroach-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 3
+
+  # Serviço para inicializar o cluster com criação de banco e tabelas
+  crdb-init:
+    image: cockroachdb/cockroach
+    networks:
+      - app-network
+    depends_on:
+      - crdb1
+      - crdb2
+      - crdb3
+    entrypoint: >
+      /bin/sh -c "
+        echo 'Aguardando crdb1 ficar pronto...';
+        sleep 5;
+        echo 'Inicializando cluster...';
+        cockroach init --insecure --host=crdb1 || echo 'Cluster já inicializado';
+        echo 'Criando banco de dados e tabelas...';
+        cockroach sql --insecure --host=crdb1 -e 'CREATE DATABASE IF NOT EXISTS defaultdb;';
+        cockroach sql --insecure --host=crdb1 --database=defaultdb -e '
+          CREATE TABLE IF NOT EXISTS key_value_store (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          CREATE TABLE IF NOT EXISTS items (
+            key TEXT PRIMARY KEY,
+            value TEXT
+          );
+        ';
+        echo 'Inicialização concluída.';
+      "
+    restart: on-failure
+
+  # HAProxy para balanceamento de carga entre os nós CockroachDB
+  haproxy:
+    image: haproxy:2.9
+    networks:
+      - app-network
+    ports:
+      - "26256:26256"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - crdb1
+      - crdb2
+      - crdb3
+      - crdb-init
+
+  # Cluster RabbitMQ com 3 nós
+  rabbitmq1:
+    image: rabbitmq:3.12-management
+    hostname: rabbitmq1
+    networks:
+      - app-network
+    ports:
+      - "5672:5672"   # AMQP protocol
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq1-data:/var/lib/rabbitmq
+    environment:
+      - RABBITMQ_ERLANG_COOKIE=CLUSTER_SECRET_KEY
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  rabbitmq2:
+    image: rabbitmq:3.12-management
+    hostname: rabbitmq2
+    networks:
+      - app-network
+    ports:
+      - "5673:5672"   # AMQP protocol
+      - "15673:15672" # Management UI
+    volumes:
+      - rabbitmq2-data:/var/lib/rabbitmq
+    environment:
+      - RABBITMQ_ERLANG_COOKIE=CLUSTER_SECRET_KEY
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    depends_on:
+      - rabbitmq1
+    command: >
+      bash -c "
+        sleep 20;
+        rabbitmq-server -detached;
+        sleep 10;
+        rabbitmqctl stop_app;
+        rabbitmqctl reset;
+        rabbitmqctl join_cluster rabbit@rabbitmq1;
+        rabbitmqctl start_app;
+        rabbitmqctl set_policy ha-all \".*\" '{\"ha-mode\":\"all\", \"ha-sync-mode\":\"automatic\"}';
+        tail -f /dev/null
+      "
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  rabbitmq3:
+    image: rabbitmq:3.12-management
+    hostname: rabbitmq3
+    networks:
+      - app-network
+    ports:
+      - "5674:5672"   # AMQP protocol
+      - "15674:15672" # Management UI
+    volumes:
+      - rabbitmq3-data:/var/lib/rabbitmq
+    environment:
+      - RABBITMQ_ERLANG_COOKIE=CLUSTER_SECRET_KEY
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    depends_on:
+      - rabbitmq1
+    command: >
+      bash -c "
+        sleep 25;
+        rabbitmq-server -detached;
+        sleep 10;
+        rabbitmqctl stop_app;
+        rabbitmqctl reset;
+        rabbitmqctl join_cluster rabbit@rabbitmq1;
+        rabbitmqctl start_app;
+        rabbitmqctl set_policy ha-all \".*\" '{\"ha-mode\":\"all\", \"ha-sync-mode\":\"automatic\"}';
+        tail -f /dev/null
+      "
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 50s
+
+  # HAProxy para balanceamento de carga entre os nós RabbitMQ
+  rabbitmq-proxy:
+    image: haproxy:2.9
+    networks:
+      - app-network
+    ports:
+      - "5670:5670"  # AMQP endpoint
+      - "15670:15670" # Admin UI
+    volumes:
+      - ./rabbitmq-haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - rabbitmq1
+      - rabbitmq2
+      - rabbitmq3
+
+  api:
+    build: ./api
+    networks:
+      - app-network
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 10s
+    ports:
+      - "8000-8002:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 2
+      start_period: 3s
+    depends_on:
+      envoy:
+        condition: service_started
+      rabbitmq-proxy:
+        condition: service_started
+      haproxy:
+        condition: service_started
+    environment:
+      - COCKROACH_HOST=haproxy
+      - COCKROACH_PORT=26256
+      - REDIS_HOST=envoy
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq-proxy
+      - RABBITMQ_PORT=5670
+
+  consumer:
+    build: ./consumer
+    networks:
+      - app-network
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 10s
+    depends_on:
+      rabbitmq-proxy:
+        condition: service_started
+      haproxy:
+        condition: service_started
+    environment:
+      - COCKROACH_HOST=haproxy
+      - COCKROACH_PORT=26256
+      - RABBITMQ_HOST=rabbitmq-proxy
+      - RABBITMQ_PORT=5670
+
+  nginx:
+    image: nginx:alpine
+    networks:
+      - app-network
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  crdb1-data:
+  crdb2-data:
+  crdb3-data:
+  redis-master-data:
+  redis-replica-data:
+  rabbitmq1-data:
+  rabbitmq2-data:
+  rabbitmq3-data:
