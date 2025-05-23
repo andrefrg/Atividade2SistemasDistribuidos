@@ -13,9 +13,7 @@ Os testes curl fornecem uma forma leve de verificar se a API está a funcionar c
 Testa o armazenamento de um par chave-valor no sistema.
 
 ```bash
-curl -X PUT -H "Content-Type: application/json" 
-     -d '{"data": {"key": "test-key", "value": "test-value"}}' 
-     http://localhost:8080/
+curl -X PUT http://localhost/ -H 'Content-Type: application/json' -d '{"data": {"key": "hello", "value": "world"}}'
 ```
 
 Resposta esperada:
@@ -67,8 +65,6 @@ Para executar os testes curl:
 1. Certifique-se de que o serviço da API está em execução
 
 
-## Resultado dos Testes
-
 ## Modificação dos Testes
 
 Para testar contra um endpoint de API diferente, modifique a variável `API_URL` no início do script:
@@ -89,4 +85,4 @@ Estes testes são simples e focam apenas na funcionalidade básica. Não testam:
 - Acesso concorrente
 - Persistência de dados entre reinícios
 
-Para testes mais abrangentes, consultar a secção sobre testes de carga na documentação do projeto.  
+Para testes mais abrangentes, consultar a secção sobre [testes de carga](./load_test_report.md) na documentação do projeto.  
