@@ -3,7 +3,7 @@
 ## Visão Geral da Arquitetura
 
 O sistema é um armazenamento de chave-valor distribuído projetado para alta disponibilidade, escalabilidade e tolerância a falhas. A arquitetura é composta por várias camadas, cada uma com sua função específica e mecanismos de redundância.
-A estrutura geral da arquitetura pode ser vista no diagrama da imagem [./Imagens/ArquiteturaSistema.png]
+A estrutura geral da arquitetura pode ser vista no diagrama da imagem [Arquitetura](./Imagens/ArquiteturaSistema.png)
 
 ## Fluxos de Dados 
 
