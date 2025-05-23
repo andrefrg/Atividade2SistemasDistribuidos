@@ -1,4 +1,4 @@
-# Relatório de Testes de Carga (Atualizado)
+# Relatório de Testes de Carga 
 
 Este documento apresenta os resultados dos testes de carga realizados no sistema de armazenamento chave-valor distribuído, bem como a justificação para o dimensionamento e os limites estabelecidos.
 
