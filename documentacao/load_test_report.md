@@ -24,10 +24,10 @@ Também realizámos testes para avaliar o desempenho do sistema em operações d
 
 #### Resultados do ApacheBench para Operações PUT
 
-| Concorrência     | Requisições | Falhas | Tempo (s) | Requisições por Segundo | Tempo por Requisição (ms)| Taxa de Transferência (KB/s)|
-|-------------- ---|-------------|--------|-----------|-------------------------|--------------------------|-----------------------------|
-| 100 utilizadores | 1.000       | 0      | 0,938     | 1.066,32                | 93,78                    | 211,39                      |
-| 500 utilizadores | 5.000       | 0      | 4,022     | 1.243,26                | 402,17                   | 246,47                      |
+| Concorrência | Requisições | Falhas | Tempo (s) | Requisições por Segundo | Tempo por Requisição (ms) | Taxa de Transferência (KB/s) |
+|-------------|-------------|---------|-----------|------------------------|--------------------------|-----------------------------|
+| 100 utilizadores | 1.000 | 0 | 0,938 | 1.066,32 | 93,78 | 211,39 |
+| 500 utilizadores | 5.000 | 0 | 4,022 | 1.243,26 | 402,17 | 246,47 |
 
 #### Desempenho de Operações Individuais
 
