@@ -4,17 +4,52 @@ import time
 import psycopg2
 import pika
 import os
+import sys
+import logging
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('consumer')
+
+print("========== INICIANDO CONSUMER ==========")
+print(f"Python version: {sys.version}")
+print(f"Running in directory: {os.getcwd()}")
+print(f"Environment variables: {os.environ}")
+print("=======================================")
+
+# Função para tentar resolver um nome de host
+def resolve_hostname(hostname, max_retries=20, retry_interval=5):
+    """Tenta resolver um nome de host com várias tentativas."""
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            # Tenta resolver o nome de host
+            logger.info(f"Tentando resolver hostname: {hostname}, tentativa {retry_count+1}/{max_retries}")
+            ip_address = socket.gethostbyname(hostname)
+            logger.info(f"Hostname {hostname} resolvido para {ip_address}")
+            return ip_address
+        except socket.gaierror as e:
+            retry_count += 1
+            if retry_count >= max_retries:
+                logger.error(f"Falha ao resolver hostname {hostname} após {max_retries} tentativas: {e}")
+                return None
+            logger.warning(f"Não foi possível resolver {hostname}, tentando novamente em {retry_interval} segundos...")
+            time.sleep(retry_interval)
 
 # Connect to CockroachDB
 def get_db_connection():
     retry_count = 0
-    max_retries = 5
+    max_retries = 10
     
     # Obter o host e porta do CockroachDB da variável de ambiente ou usar padrão
     cockroach_host = os.environ.get('COCKROACH_HOST', 'haproxy')
     cockroach_port = int(os.environ.get('COCKROACH_PORT', '26256'))
     
-    print(f"DEBUG: Attempting to connect to {cockroach_host}:{cockroach_port}")
+    print(f"DEBUG: Attempting to connect to CockroachDB at {cockroach_host}:{cockroach_port}")
+    
+    # Tenta resolver o hostname do CockroachDB
+    resolve_hostname(cockroach_host)
     
     while retry_count < max_retries:
         try:
@@ -30,8 +65,9 @@ def get_db_connection():
         except psycopg2.OperationalError as e:
             retry_count += 1
             if retry_count >= max_retries:
-                raise e
-            print(f"Failed to connect to CockroachDB at {cockroach_host}:{cockroach_port}: {e}. Retrying in 5 seconds...")
+                print(f"Failed to connect to CockroachDB after {max_retries} attempts. Exiting.")
+                sys.exit(1)
+            print(f"Failed to connect to CockroachDB at {cockroach_host}:{cockroach_port}: {e}. Retrying in 5 seconds... (Attempt {retry_count}/{max_retries})")
             time.sleep(5)
 
 # Initialize database
@@ -103,18 +139,28 @@ def start_consumer():
     hostname = socket.gethostname()
     print(f"Starting consumer on {hostname}")
     
+    # Esperar um tempo para garantir que os outros serviços estejam prontos
+    print("Waiting for services to be ready...")
+    time.sleep(20)
+    
     # Initialize database
+    print("Initializing database...")
     init_db()
     
     # Connect to RabbitMQ
     retry_count = 0
-    max_retries = 10
+    max_retries = 30
     
     # Obter o host e porta do RabbitMQ da variável de ambiente ou usar padrão
     rabbitmq_host = os.environ.get('RABBITMQ_HOST', 'rabbitmq-proxy')
     rabbitmq_port = int(os.environ.get('RABBITMQ_PORT', '5670'))
     
     print(f"DEBUG: Attempting to connect to RabbitMQ at {rabbitmq_host}:{rabbitmq_port}")
+    
+    # Tenta resolver o hostname do RabbitMQ
+    if not resolve_hostname(rabbitmq_host, max_retries=30, retry_interval=10):
+        print(f"Could not resolve hostname {rabbitmq_host}. Exiting.")
+        sys.exit(1)
     
     while retry_count < max_retries:
         try:
@@ -123,9 +169,9 @@ def start_consumer():
                     host=rabbitmq_host,
                     port=rabbitmq_port,
                     heartbeat=30,
-                    blocked_connection_timeout=10,
-                    socket_timeout=10,
-                    connection_attempts=3,
+                    blocked_connection_timeout=15,
+                    socket_timeout=15,
+                    connection_attempts=5,
                     retry_delay=5,
                     credentials=pika.PlainCredentials('guest', 'guest')
                 )
@@ -148,9 +194,13 @@ def start_consumer():
         except pika.exceptions.AMQPConnectionError as e:
             retry_count += 1
             if retry_count >= max_retries:
-                raise e
-            print(f"Failed to connect to RabbitMQ at {rabbitmq_host}:{rabbitmq_port}: {e}. Retrying in 5 seconds...")
-            time.sleep(5)
+                print(f"Failed to connect to RabbitMQ after {max_retries} attempts. Exiting.")
+                sys.exit(1)
+            print(f"Failed to connect to RabbitMQ at {rabbitmq_host}:{rabbitmq_port}: {e}. Retrying in 10 seconds... (Attempt {retry_count}/{max_retries})")
+            time.sleep(10)
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            sys.exit(1)
 
 if __name__ == "__main__":
     start_consumer() 

@@ -71,10 +71,10 @@ def get_redis_connection():
 # Mapear endereços IP do RabbitMQ para evitar resolução de DNS
 # Isso deve acelerar a conexão
 RABBITMQ_IPS = {
-    "rabbitmq-proxy": "172.18.0.10",  # Ajuste para o IP correto do RabbitMQ em sua rede
-    "rabbitmq1": "172.18.0.11",
-    "rabbitmq2": "172.18.0.12",
-    "rabbitmq3": "172.18.0.13"
+    "rabbitmq-proxy": "172.24.0.13",  # Ajuste para o IP correto do RabbitMQ em sua rede
+    "rabbitmq1": "172.24.0.11",
+    "rabbitmq2": "172.24.0.12",
+    "rabbitmq3": "172.24.0.13"
 }
 
 # RabbitMQ connection with improved error handling

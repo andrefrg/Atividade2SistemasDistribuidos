@@ -250,6 +250,12 @@ services:
       - rabbitmq1
       - rabbitmq2
       - rabbitmq3
+    restart: always
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "5670"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   api:
     build: ./api
