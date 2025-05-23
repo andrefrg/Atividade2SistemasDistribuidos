@@ -162,15 +162,11 @@ curl -X DELETE http://localhost/hello
 
 ## Práticas Recomendadas
 
-1. **Tratamento de Erros**: Implementar sempre tratamento adequado de erros ao interagir com a API, especialmente para lidar com indisponibilidade temporária do serviço.
+1. **Chaves Complexas**: Evitar o uso de caracteres especiais nas chaves, pois eles podem exigir codificação URL adequada.
 
-2. **Retentativas**: Para operações críticas, implementar lógica de retentativa com backoff exponencial para lidar com falhas transitórias.
+2. **Valores Grandes**: Para valores muito grandes (> 1MB), considere dividi-los em chunks ou usar um sistema de armazenamento de objetos separado.
 
-3. **Chaves Complexas**: Evitar o uso de caracteres especiais nas chaves, pois eles podem exigir codificação URL adequada.
-
-4. **Valores Grandes**: Para valores muito grandes (> 1MB), considere dividi-los em chunks ou usar um sistema de armazenamento de objetos separado.
-
-5. **Monitoramento**: Utilizar o endpoint `/health` para monitoramento regular da saúde da API.
+3. **Monitoramento**: Utilizar o endpoint `/health` para monitoramento regular da saúde da API.
 
 ## Limitações da API
 
